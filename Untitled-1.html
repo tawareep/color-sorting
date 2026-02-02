@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LEGO Sort - Locked Completed Stacks</title>
+    <style>
+        :root {
+            --bg-color: #2c3e50;
+            --block-size: 60px;
+            --block-height: 35px;
+            --gap-size: 15px;
+            --max-rows: 6;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, sans-serif;
+            background-color: var(--bg-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+            color: #eee;
+            user-select: none;
+        }
+
+        /* --- Controls --- */
+        .controls {
+            background: rgba(0, 0, 0, 0.4);
+            padding: 10px 20px;
+            border-radius: 0 0 15px 15px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            z-index: 10;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .control-group { display: flex; flex-direction: column; align-items: center; font-size: 0.8rem; color: #ccc; }
+        input { 
+            padding: 5px; border: 1px solid #555; border-radius: 4px; 
+            width: 50px; text-align: center; font-weight: bold; font-size: 1rem;
+            background: rgba(255, 255, 255, 0.1); color: #fff;
+        }
+        button { 
+            padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer; 
+            font-weight: bold; transition: 0.2s; font-size: 0.9rem;
+        }
+        button#restart-btn { background: #3498db; color: white; }
+        button#restart-btn:hover { background: #2980b9; }
+        button#undo-btn { background: #e67e22; color: white; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        button:active { transform: translateY(2px); }
+
+        /* --- Game Area --- */
+        .game-wrapper {
+            flex: 1; width: 100%; overflow: auto;
+            display: flex; justify-content: center; align-items: flex-start;
+            padding: 20px 10px;
+        }
+
+        .game-container {
+            display: flex; gap: var(--gap-size); padding: 10px;
+            flex-wrap: wrap; justify-content: center;
+            max-width: 1400px;
+        }
+
+        /* ฐานรอง */
+        .baseplate {
+            width: var(--block-size);
+            height: calc(var(--block-height) * var(--max-rows));
+            background-color: rgba(255,255,255,0.08);
+            border: 3px solid rgba(255,255,255,0.15);
+            border-top: none; border-radius: 0 0 8px 8px;
+            display: flex; flex-direction: column-reverse; justify-content: flex-start;
+            cursor: pointer; position: relative; transition: all 0.2s;
+            /* เส้นบรรทัดจางๆ */
+            background-image: repeating-linear-gradient(
+                0deg, transparent, transparent calc(var(--block-height) - 1px),
+                rgba(255,255,255,0.05) calc(var(--block-height) - 1px),
+                rgba(255,255,255,0.05) var(--block-height)
+            );
+        }
+        .baseplate:hover { border-color: rgba(255,255,255,0.3); }
+        
+        .baseplate.selected {
+            border-color: #f1c40f; background-color: rgba(241, 196, 15, 0.1);
+            box-shadow: 0 0 20px rgba(241, 196, 15, 0.2);
+        }
+
+        /* --- สไตล์สำหรับขวดที่เสร็จแล้ว (Locked) --- */
+        .baseplate.completed {
+            border-color: #2ecc71; /* สีเขียว */
+            background-color: rgba(46, 204, 113, 0.1);
+            cursor: default; /* เมาส์ไม่เปลี่ยนเป็นรูปมือ */
+            opacity: 0.8;
+        }
+        
+        /* เครื่องหมายถูกด้านบน */
+        .baseplate.completed::after {
+            content: '✓';
+            position: absolute;
+            top: -30px; left: 50%;
+            transform: translateX(-50%);
+            font-size: 24px;
+            color: #2ecc71;
+            font-weight: bold;
+            animation: bounceIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+        }
+
+        @keyframes bounceIn {
+            0% { transform: translateX(-50%) scale(0); opacity: 0; }
+            50% { transform: translateX(-50%) scale(1.2); }
+            100% { transform: translateX(-50%) scale(1); opacity: 1; }
+        }
+
+        /* ตัวบล็อก */
+        .lego-block {
+            width: 100%; height: var(--block-height);
+            box-sizing: border-box; border: 1px solid rgba(0,0,0,0.2);
+            border-radius: 3px; position: relative;
+            transition: transform 0.2s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.2s;
+        }
+        .lego-block::after {
+            content: ''; position: absolute; top: 2px; left: 2px; right: 2px; bottom: 50%;
+            background: linear-gradient(to bottom, rgba(255,255,255,0.3), transparent);
+            border-radius: 2px; pointer-events: none;
+        }
+        .lego-block::before {
+            content: ''; position: absolute; top: -4px; left: 50%; transform: translateX(-50%);
+            width: 35%; height: 5px; background: inherit;
+            border-radius: 3px 3px 0 0; border: 1px solid rgba(0,0,0,0.1); border-bottom: none;
+            box-shadow: inset 0 1px 1px rgba(255,255,255,0.4);
+        }
+        .lego-block.moving {
+            transform: translateY(-25px) scale(1.05); z-index: 10;
+            box-shadow: 0 15px 25px rgba(0,0,0,0.3); border-color: rgba(255,255,255,0.6);
+        }
+
+        .win-msg {
+            display: none; position: fixed; top: 50%; left: 50%;
+            transform: translate(-50%, -50%); background: white; color: #333;
+            padding: 40px; border-radius: 15px; text-align: center; z-index: 100;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+            animation: popIn 0.3s ease-out;
+        }
+        @keyframes popIn { from {transform: translate(-50%, -50%) scale(0.8); opacity:0;} to {transform: translate(-50%, -50%) scale(1); opacity:1;} }
+    </style>
+</head>
+<body>
+
+    <div class="controls">
+        <div class="control-group">
+            <label>Colors</label>
+            <input type="number" id="inp-colors" value="8" min="2" max="14">
+        </div>
+        <div class="control-group">
+            <label>Height</label>
+            <input type="number" id="inp-height" value="5" min="3" max="12">
+        </div>
+        <div class="control-group">
+            <label>Total Rows</label>
+            <input type="number" id="inp-rows" value="10" min="4" max="20">
+        </div>
+        <button id="restart-btn" onclick="startGame()">⚡ New Game</button>
+        <button id="undo-btn" onclick="undoMove()" disabled>↩️ Undo</button>
+    </div>
+
+    <div class="game-wrapper">
+        <div class="game-container" id="game-container"></div>
+    </div>
+
+    <div class="win-msg" id="win-msg">
+        <h1 style="color:#2ecc71; margin:0 0 10px 0;">🎉 COMPLETE! 🎉</h1>
+        <button onclick="startGame()" style="background:#2ecc71; color:white; font-size:1.2rem; padding:10px 30px;">Play Next Level</button>
+    </div>
+
+    <script>
+        const DISTINCT_COLORS = [
+            '#FF2E2E', '#2E86FF', '#FFD700', '#00C853', '#AA00FF', '#FF6D00', 
+            '#00B8D4', '#F50057', '#795548', '#607D8B', '#C6FF00', '#304FFE', 
+            '#D500F9', '#004D40'
+        ];
+
+        let stacks = [];
+        let history = [];
+        let selectedIdx = null;
+        let config = { colors: 8, height: 5, rows: 10 };
+
+        function startGame() {
+            let c = parseInt(document.getElementById('inp-colors').value);
+            let h = parseInt(document.getElementById('inp-height').value);
+            let r = parseInt(document.getElementById('inp-rows').value);
+            
+            if (c > 14) c = 14; if (c < 2) c = 2;
+            if (h > 12) h = 12; if (h < 3) h = 3;
+            if (r < c + 1) r = c + 1;
+            if (r > 20) r = 20;
+
+            config.colors = c;
+            config.height = h;
+            config.rows = r;
+
+            document.getElementById('inp-colors').value = config.colors;
+            document.getElementById('inp-height').value = config.height;
+            document.getElementById('inp-rows').value = config.rows;
+            document.documentElement.style.setProperty('--max-rows', config.height);
+            adjustLayoutSize();
+
+            history = [];
+            selectedIdx = null;
+            updateUndoBtn();
+            document.getElementById('win-msg').style.display = 'none';
+
+            // --- Level Generation (Solvable) ---
+            const NUM_EMPTY = 2;
+            const NUM_FILLED = config.rows - NUM_EMPTY;
+            let pool = [];
+
+            for (let i = 0; i < NUM_FILLED; i++) {
+                const colorIndex = i % config.colors; 
+                const color = DISTINCT_COLORS[colorIndex];
+                for (let j = 0; j < config.height; j++) pool.push(color);
+            }
+
+            for (let i = pool.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [pool[i], pool[j]] = [pool[j], pool[i]];
+            }
+
+            stacks = [];
+            for (let i = 0; i < NUM_FILLED; i++) stacks.push(pool.splice(0, config.height));
+            for (let i = 0; i < NUM_EMPTY; i++) stacks.push([]);
+
+            render();
+        }
+
+        function adjustLayoutSize() {
+            const root = document.documentElement;
+            if (config.rows >= 10 || config.height >= 8) {
+                root.style.setProperty('--block-size', '45px');
+                root.style.setProperty('--block-height', '25px');
+                root.style.setProperty('--gap-size', '10px');
+            } else {
+                root.style.setProperty('--block-size', '65px');
+                root.style.setProperty('--block-height', '40px');
+                root.style.setProperty('--gap-size', '20px');
+            }
+        }
+
+        // --- Helper Function ใหม่: เช็คว่าขวดนี้เสร็จหรือยัง ---
+        function isStackComplete(stack) {
+            if (stack.length !== config.height) return false;
+            // เช็คว่าทุกสีในขวด เหมือนกับสีแรกหรือไม่
+            const firstColor = stack[0];
+            return stack.every(color => color === firstColor);
+        }
+
+        function render() {
+            const container = document.getElementById('game-container');
+            container.innerHTML = '';
+            
+            stacks.forEach((stack, idx) => {
+                const baseplate = document.createElement('div');
+                let className = `baseplate ${selectedIdx === idx ? 'selected' : ''}`;
+                
+                // ตรวจสอบสถานะขวดเพื่อเพิ่ม Class Locked
+                const isCompleted = isStackComplete(stack);
+                if (isCompleted) {
+                    className += ' completed';
+                }
+
+                baseplate.className = className;
+                
+                // ถ้ายังไม่เสร็จ ให้คลิกได้ ถ้าเสร็จแล้วคลิกไม่ได้
+                if (!isCompleted) {
+                    baseplate.onclick = () => handleClick(idx);
+                }
+
+                stack.forEach((color, blockIdx) => {
+                    const block = document.createElement('div');
+                    block.className = 'lego-block';
+                    block.style.backgroundColor = color;
+                    
+                    if (selectedIdx === idx) {
+                        const topColor = stack[stack.length - 1];
+                        let firstDiffIndex = -1;
+                        for(let i=stack.length-1; i>=0; i--) {
+                            if(stack[i] !== topColor) { firstDiffIndex = i; break; }
+                        }
+                        if (blockIdx > firstDiffIndex) block.classList.add('moving');
+                    }
+                    baseplate.appendChild(block);
+                });
+                container.appendChild(baseplate);
+            });
+        }
+
+        function handleClick(idx) {
+            // ป้องกันเพิ่มเติม (แม้จะไม่ได้ bind onclick ไว้แล้วก็กันเหนียว)
+            if (isStackComplete(stacks[idx])) return;
+
+            if (selectedIdx === null) {
+                if (stacks[idx].length > 0) { selectedIdx = idx; render(); }
+            } else {
+                if (idx === selectedIdx) { selectedIdx = null; render(); }
+                else {
+                    if (canMove(selectedIdx, idx)) {
+                        saveState();
+                        moveBlocks(selectedIdx, idx);
+                        selectedIdx = null;
+                        render();
+                        checkWin();
+                    } else {
+                        selectedIdx = null; render();
+                    }
+                }
+            }
+        }
+
+        function canMove(from, to) {
+            // ห้ามย้ายไปใส่ขวดที่เสร็จแล้ว (จริงๆ มันเช็คความสูงอยู่แล้ว แต่เขียนให้ชัดเจน)
+            if (isStackComplete(stacks[to])) return false;
+            
+            if (stacks[to].length >= config.height) return false;
+            if (stacks[to].length === 0) return true;
+            return stacks[from][stacks[from].length-1] === stacks[to][stacks[to].length-1];
+        }
+
+        function moveBlocks(from, to) {
+            const source = stacks[from];
+            const dest = stacks[to];
+            const color = source[source.length - 1];
+            let count = 0;
+            for(let i=source.length-1; i>=0; i--) {
+                if(source[i]===color) count++; else break;
+            }
+            const actual = Math.min(count, config.height - dest.length);
+            for(let i=0; i<actual; i++) dest.push(source.pop());
+            updateUndoBtn();
+        }
+
+        function saveState() {
+            history.push(stacks.map(s => [...s]));
+            if(history.length>50) history.shift();
+            updateUndoBtn();
+        }
+
+        function undoMove() {
+            if(history.length===0) return;
+            stacks = history.pop();
+            selectedIdx = null;
+            render();
+            updateUndoBtn();
+        }
+
+        function updateUndoBtn() { document.getElementById('undo-btn').disabled = history.length === 0; }
+
+        function checkWin() {
+            const isWin = stacks.every(stack => 
+                stack.length === 0 || isStackComplete(stack)
+            );
+            if (isWin) {
+                document.getElementById('win-msg').style.display = 'block';
+            }
+        }
+
+        startGame();
+    </script>
+</body>
+</html>
